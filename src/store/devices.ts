@@ -5,6 +5,22 @@ import { mqttService } from "../services/mqtt";
 export type Device = {
   device_id: string;
   user_id: string;
+
+  serialNumber?: string;
+
+  mqtt_topics?: {
+    switches: {
+      set: string;
+      state: string;
+    }[];
+  };
+
+  switches?: {
+    id: number;
+    name: string;
+    status: boolean;
+  }[];
+
   name: string;
   type: string;
   room: string;
@@ -30,7 +46,7 @@ type DevicesState = {
   toggleDevice: (deviceId: string) => Promise<void>;
   patchDevice: (deviceId: string, patch: Partial<Device>) => Promise<void>;
   deleteDevice: (deviceId: string) => Promise<void>;
-  createDevice: (data: { name: string; type: string; room: string; icon?: string; color?: string }) => Promise<void>;
+  createDevice: (data: any) => Promise<void>;
   bindMqtt: () => () => void;
 };
 
@@ -89,10 +105,87 @@ export const useDevicesStore = create<DevicesState>((set, get) => ({
       await api.deleteDevice(deviceId);
     } catch {}
   },
-  createDevice: async (data) => {
-    const created: Device = await api.createDevice(data);
-    set((s) => ({ devices: [...s.devices, created] }));
-  },
+
+ createDevice: async (data) => {
+
+  // LOCAL OFFLINE DEVICE CREATION
+
+  const created: Device = {
+
+    device_id:
+      data.id ||
+      `device_${Date.now()}`,
+
+    user_id: "local_user",
+
+    name: data.name,
+
+    type: data.type,
+
+    room: data.room,
+
+    status: false,
+
+    online: false,
+
+    brightness: 100,
+
+    fan_speed: 1,
+
+    temperature: 24,
+
+    target_temperature: 24,
+
+    energy_watts: 0,
+
+    icon: data.icon || null,
+
+    color: data.color || null,
+
+    mqtt_topic_prefix:
+      `home/${data.serialNumber}`,
+
+    created_at:
+      new Date().toISOString(),
+  };
+
+  // SAVE LOCALLY
+
+  set((s) => ({
+    devices: [
+      ...s.devices,
+      created,
+    ],
+  }));
+
+  console.log(
+    "LOCAL DEVICE CREATED:",
+    created
+  );
+
+  // REGISTER MQTT DEVICE
+
+  mqttService.registerDevice(
+    created.device_id,
+    {
+      status: created.status,
+      brightness:
+        created.brightness,
+
+      fan_speed:
+        created.fan_speed,
+
+      temperature:
+        created.temperature,
+
+      target_temperature:
+        created.target_temperature,
+
+      energy_watts:
+        created.energy_watts,
+    }
+  );
+},
   bindMqtt: () => {
     return mqttService.onStatus((deviceId, payload) => {
       get().applyMqttStatus(deviceId, payload);
