@@ -1,29 +1,56 @@
 import { useEffect } from "react";
-import { View, ActivityIndicator } from "react-native";
-import { useRouter } from "expo-router";
-import { useAuthStore } from "../src/store/auth";
+
+import {
+  View,
+  ActivityIndicator,
+} from "react-native";
+
+import {
+  useRouter,
+} from "expo-router";
+
+import { useAuthStore }
+from "../src/store/auth";
 
 export default function Index() {
+
   const router = useRouter();
-  const { user, bootstrap } = useAuthStore();
+
+  const user =
+    useAuthStore(
+      (state) => state.user
+    );
+
+  const bootstrapped =
+    useAuthStore(
+      (state) => state.bootstrapped
+    );
 
   useEffect(() => {
-    const init = async () => {
-      await bootstrap();
 
-      const currentUser = useAuthStore.getState().user;
+    useAuthStore
+      .getState()
+      .bootstrap();
 
-      if (currentUser) {
-        router.replace("/"); // goes to tabs
-      } else {
-        router.replace("/login");
-      }
-    };
-
-    init();
   }, []);
 
+  useEffect(() => {
+
+    if (!bootstrapped) return;
+
+    if (user) {
+
+      router.replace("/explore");
+
+    } else {
+
+      router.replace("/login");
+    }
+
+  }, [bootstrapped, user]);
+
   return (
+
     <View
       style={{
         flex: 1,
@@ -31,7 +58,11 @@ export default function Index() {
         alignItems: "center",
       }}
     >
-      <ActivityIndicator />
+
+      <ActivityIndicator
+        size="large"
+      />
+
     </View>
   );
 }

@@ -2,6 +2,23 @@ import { create } from "zustand";
 import { api } from "../services/api";
 import { mqttService } from "../services/mqtt";
 
+// ======================================================
+// TYPES
+// ======================================================
+
+export type SwitchItem = {
+  id: number;
+  name: string;
+  status: boolean;
+};
+
+export type SwitchGroup = {
+  id: string;
+  name: string;
+  switchIds: number[];
+  status: boolean;
+};
+
 export type Device = {
   device_id: string;
   user_id: string;
@@ -15,180 +32,496 @@ export type Device = {
     }[];
   };
 
-  switches?: {
-    id: number;
-    name: string;
-    status: boolean;
-  }[];
+  switches?: SwitchItem[];
+
+  groups?: SwitchGroup[];
 
   name: string;
   type: string;
   room: string;
+
   status: boolean;
   online: boolean;
-  brightness?: number;
-  fan_speed?: number;
-  temperature?: number;
-  target_temperature?: number;
-  energy_watts?: number;
+
   icon?: string | null;
   color?: string | null;
+
   mqtt_topic_prefix: string;
+
   created_at: string;
 };
 
+// ======================================================
+// STORE TYPE
+// ======================================================
+
 type DevicesState = {
   devices: Device[];
+
   loading: boolean;
+
   error: string | null;
+
   fetchDevices: () => Promise<void>;
-  applyMqttStatus: (deviceId: string, payload: any) => void;
-  toggleDevice: (deviceId: string) => Promise<void>;
-  patchDevice: (deviceId: string, patch: Partial<Device>) => Promise<void>;
-  deleteDevice: (deviceId: string) => Promise<void>;
-  createDevice: (data: any) => Promise<void>;
+
+  deleteDevice: (
+    deviceId: string
+  ) => Promise<void>;
+
+  createDevice: (
+    data: any
+  ) => Promise<void>;
+
+  toggleSwitch: (
+    deviceId: string,
+    switchId: number
+  ) => void;
+
+  renameSwitch: (
+    deviceId: string,
+    switchId: number,
+    newName: string
+  ) => void;
+
+  createGroup: (
+    deviceId: string,
+    groupName: string,
+    switchIds: number[]
+  ) => void;
+
+  toggleGroup: (
+    deviceId: string,
+    groupId: string
+  ) => void;
+
   bindMqtt: () => () => void;
 };
 
-export const useDevicesStore = create<DevicesState>((set, get) => ({
+// ======================================================
+// STORE
+// ======================================================
+
+export const useDevicesStore =
+create<DevicesState>((set, get) => ({
+
   devices: [],
+
   loading: false,
+
   error: null,
+
+  // ======================================================
+  // FETCH DEVICES
+  // ======================================================
+
   fetchDevices: async () => {
-    set({ loading: true, error: null });
+
+    set({
+      loading: true,
+      error: null,
+    });
+
     try {
-      const list: Device[] = await api.listDevices();
-      set({ devices: list, loading: false });
-      list.forEach((d) =>
-        mqttService.registerDevice(d.device_id, {
-          status: d.status,
-          brightness: d.brightness,
-          fan_speed: d.fan_speed,
-          temperature: d.temperature,
-          target_temperature: d.target_temperature,
-          energy_watts: d.energy_watts,
-        }),
-      );
+
+      // NO BACKEND YET
+      // LOCAL STATE ONLY
+
+      set({
+        loading: false,
+      });
+
     } catch (e: any) {
-      set({ loading: false, error: e?.message || "Failed to load devices" });
+
+      set({
+        loading: false,
+        error:
+          e?.message ||
+          "Failed to load devices",
+      });
     }
   },
-  applyMqttStatus: (deviceId, payload) => {
+
+  // ======================================================
+  // CREATE DEVICE
+  // ======================================================
+
+  createDevice: async (
+    data
+  ) => {
+
+    const mqttTopics =
+      Array.from(
+        { length: 10 },
+        (_, i) => ({
+          set:
+            `home/relay/${i + 1}/set`,
+
+          state:
+            `home/relay/${i + 1}/state`,
+        })
+      );
+
+    const created: Device = {
+
+      device_id:
+        data.id ||
+        `device_${Date.now()}`,
+
+      user_id:
+        "local_user",
+
+      serialNumber:
+        data.serialNumber,
+
+      name:
+        data.name,
+
+      type:
+        data.type,
+
+      room:
+        data.room,
+
+      status: false,
+
+      online: true,
+
+      icon:
+        data.icon || null,
+
+      color:
+        data.color || null,
+
+      mqtt_topic_prefix:
+        `home/${data.serialNumber}`,
+
+      mqtt_topics: {
+        switches:
+          mqttTopics,
+      },
+
+      switches:
+        Array.from(
+          { length: 10 },
+          (_, i) => ({
+            id: i + 1,
+            name:
+              `Switch ${i + 1}`,
+            status: false,
+          })
+        ),
+
+      groups: [],
+
+      created_at:
+        new Date().toISOString(),
+    };
+
     set((s) => ({
-      devices: s.devices.map((d) => (d.device_id === deviceId ? { ...d, ...payload } : d)),
+      devices: [
+        ...s.devices,
+        created,
+      ],
+    }));
+
+    console.log(
+      "DEVICE CREATED:",
+      created
+    );
+  },
+
+  // ======================================================
+  // DELETE DEVICE
+  // ======================================================
+
+  deleteDevice: async (
+    deviceId
+  ) => {
+
+    set((s) => ({
+      devices:
+        s.devices.filter(
+          (x) =>
+            x.device_id !==
+            deviceId
+        ),
     }));
   },
-  toggleDevice: async (deviceId) => {
-    const d = get().devices.find((x) => x.device_id === deviceId);
-    if (!d) return;
-    const next = !d.status;
-    // optimistic
-    set((s) => ({ devices: s.devices.map((x) => (x.device_id === deviceId ? { ...x, status: next } : x)) }));
-    mqttService.publish(deviceId, { status: next });
-    try {
-      await api.updateDevice(deviceId, { status: next });
-    } catch {
-      // rollback
-      set((s) => ({ devices: s.devices.map((x) => (x.device_id === deviceId ? { ...x, status: !next } : x)) }));
-    }
+
+  // ======================================================
+  // TOGGLE SWITCH
+  // ======================================================
+
+  toggleSwitch: (
+    deviceId,
+    switchId
+  ) => {
+
+    set((state) => ({
+
+      devices:
+        state.devices.map(
+          (device) => {
+
+        if (
+          device.device_id !==
+          deviceId
+        ) {
+          return device;
+        }
+
+        const updatedSwitches =
+          (
+            device.switches || []
+          ).map((sw) => {
+
+            if (
+              sw.id === switchId
+            ) {
+
+              const newStatus =
+                !sw.status;
+
+              // MQTT SEND
+
+              mqttService.publishRelay(
+                switchId,
+                newStatus
+              );
+
+              console.log(
+                "MQTT SENT:",
+                `home/relay/${switchId}/set`,
+                newStatus
+                  ? "ON"
+                  : "OFF"
+              );
+
+              return {
+                ...sw,
+                status:
+                  newStatus,
+              };
+            }
+
+            return sw;
+          });
+
+        return {
+          ...device,
+          switches:
+            updatedSwitches,
+        };
+      }),
+    }));
   },
-  patchDevice: async (deviceId, patch) => {
-    set((s) => ({ devices: s.devices.map((x) => (x.device_id === deviceId ? { ...x, ...patch } : x)) }));
-    mqttService.publish(deviceId, patch);
-    try {
-      await api.updateDevice(deviceId, patch);
-    } catch {}
+
+  // ======================================================
+  // RENAME SWITCH
+  // ======================================================
+
+  renameSwitch: (
+    deviceId,
+    switchId,
+    newName
+  ) => {
+
+    set((state) => ({
+
+      devices:
+        state.devices.map(
+          (device) => {
+
+        if (
+          device.device_id !==
+          deviceId
+        ) {
+          return device;
+        }
+
+        return {
+
+          ...device,
+
+          switches:
+            (
+              device.switches ||
+              []
+            ).map((sw) =>
+
+              sw.id === switchId
+                ? {
+                    ...sw,
+                    name:
+                      newName,
+                  }
+                : sw
+            ),
+        };
+      }),
+    }));
   },
-  deleteDevice: async (deviceId) => {
-    set((s) => ({ devices: s.devices.filter((x) => x.device_id !== deviceId) }));
-    try {
-      await api.deleteDevice(deviceId);
-    } catch {}
+
+  // ======================================================
+  // CREATE GROUP
+  // ======================================================
+
+  createGroup: (
+    deviceId,
+    groupName,
+    switchIds
+  ) => {
+
+    set((state) => ({
+
+      devices:
+        state.devices.map(
+          (device) => {
+
+        if (
+          device.device_id !==
+          deviceId
+        ) {
+          return device;
+        }
+
+        const newGroup = {
+
+          id:
+            Date.now()
+            .toString(),
+
+          name:
+            groupName,
+
+          switchIds,
+
+          status: false,
+        };
+
+        return {
+
+          ...device,
+
+          groups: [
+            ...(device.groups || []),
+            newGroup,
+          ],
+        };
+      }),
+    }));
   },
 
- createDevice: async (data) => {
+  // ======================================================
+  // TOGGLE GROUP
+  // ======================================================
 
-  // LOCAL OFFLINE DEVICE CREATION
+  toggleGroup: (
+    deviceId,
+    groupId
+  ) => {
 
-  const created: Device = {
+    set((state) => ({
 
-    device_id:
-      data.id ||
-      `device_${Date.now()}`,
+      devices:
+        state.devices.map(
+          (device) => {
 
-    user_id: "local_user",
+        if (
+          device.device_id !==
+          deviceId
+        ) {
+          return device;
+        }
 
-    name: data.name,
+        let targetGroup:
+          SwitchGroup | null
+          = null;
 
-    type: data.type,
+        const updatedGroups =
+          (
+            device.groups || []
+          ).map((group) => {
 
-    room: data.room,
+            if (
+              group.id !==
+              groupId
+            ) {
+              return group;
+            }
 
-    status: false,
+            targetGroup = {
 
-    online: false,
+              ...group,
 
-    brightness: 100,
+              status:
+                !group.status,
+            };
 
-    fan_speed: 1,
+            return targetGroup;
+          });
 
-    temperature: 24,
+        const updatedSwitches =
+          (
+            device.switches || []
+          ).map((sw) => {
 
-    target_temperature: 24,
+            if (
+              targetGroup
+              ?.switchIds
+              .includes(sw.id)
+            ) {
 
-    energy_watts: 0,
+              mqttService.publishRelay(
+                sw.id,
+                targetGroup.status
+              );
 
-    icon: data.icon || null,
+              return {
 
-    color: data.color || null,
+                ...sw,
 
-    mqtt_topic_prefix:
-      `home/${data.serialNumber}`,
+                status:
+                  targetGroup.status,
+              };
+            }
 
-    created_at:
-      new Date().toISOString(),
-  };
+            return sw;
+          });
 
-  // SAVE LOCALLY
+        return {
 
-  set((s) => ({
-    devices: [
-      ...s.devices,
-      created,
-    ],
-  }));
+          ...device,
 
-  console.log(
-    "LOCAL DEVICE CREATED:",
-    created
-  );
+          groups:
+            updatedGroups,
 
-  // REGISTER MQTT DEVICE
+          switches:
+            updatedSwitches,
+        };
+      }),
+    }));
+  },
 
-  mqttService.registerDevice(
-    created.device_id,
-    {
-      status: created.status,
-      brightness:
-        created.brightness,
+  // ======================================================
+  // MQTT LISTENER
+  // ======================================================
 
-      fan_speed:
-        created.fan_speed,
-
-      temperature:
-        created.temperature,
-
-      target_temperature:
-        created.target_temperature,
-
-      energy_watts:
-        created.energy_watts,
-    }
-  );
-},
   bindMqtt: () => {
-    return mqttService.onStatus((deviceId, payload) => {
-      get().applyMqttStatus(deviceId, payload);
-    });
+
+    return mqttService.onRelayUpdate(
+
+      (
+        relayId,
+        payload
+      ) => {
+
+        console.log(
+          "RELAY UPDATE:",
+          relayId,
+          payload
+        );
+      }
+    );
   },
 }));

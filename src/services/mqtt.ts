@@ -1,129 +1,461 @@
-/**
- * MQTT Service Singleton.
- * Connects to public MQTT broker over WebSocket (works in React Native/Expo).
- * Subscribes to home/+/status, publishes to home/{device_id}/control.
- *
- * Includes a built-in simulator that emulates ESP32 status responses
- * so the UI stays reactive even without real hardware.
- */
 import mqtt, { MqttClient } from "mqtt";
+import "react-native-url-polyfill/auto";
 
-type StatusListener = (deviceId: string, payload: any) => void;
-type ConnectionListener = (connected: boolean) => void;
+global.Buffer =
+  global.Buffer ||
+  require("buffer").Buffer;
+
+type RelayListener = (
+  relayId: number,
+  payload: any
+) => void;
+
+type ConnectionListener = (
+  connected: boolean
+) => void;
 
 class MqttService {
-  private client: MqttClient | null = null;
-  private statusListeners = new Set<StatusListener>();
-  private connectionListeners = new Set<ConnectionListener>();
+
+  private client: MqttClient | null =
+    null;
+
+  private relayListeners =
+    new Set<RelayListener>();
+
+  private connectionListeners =
+    new Set<ConnectionListener>();
+
   private connected = false;
-  private simulatorEnabled = true;
-  private deviceState: Record<string, any> = {};
+
+  private relayStates: Record<
+    number,
+    boolean
+  > = {};
+
+  // =========================
+  // DEVICE ID
+  // =========================
+
+  private deviceId =
+    "SMDH2808B001192";
+
+  // =========================
+  // CONNECTION STATUS
+  // =========================
 
   isConnected() {
     return this.connected;
   }
 
-  setSimulator(enabled: boolean) {
-    this.simulatorEnabled = enabled;
-  }
-
-  isSimulatorEnabled() {
-    return this.simulatorEnabled;
-  }
-
-  registerDevice(deviceId: string, initial: any) {
-    this.deviceState[deviceId] = { ...initial };
-  }
+  // =========================
+  // CONNECT MQTT
+  // =========================
 
   connect() {
-    if (this.client) return;
+
+    if (this.client) {
+
+      console.log(
+        "MQTT ALREADY CONNECTED"
+      );
+
+      return;
+    }
+
     try {
-      const url = "wss://broker.hivemq.com:8884/mqtt";
-      const client = mqtt.connect(url, {
-        clientId: `iothome_${Math.random().toString(16).slice(2, 10)}`,
-        keepalive: 30,
-        reconnectPeriod: 4000,
-        connectTimeout: 8000,
-        clean: true,
-      });
+
+      const url =
+        "ws://10.48.70.8:9001";
+
+      console.log(
+        "MQTT URL:",
+        url
+      );
+
+      const clientId =
+        `smarthome_${Math.random()
+          .toString(16)
+          .slice(2, 10)}`;
+
+      console.log(
+        "MQTT CLIENT ID:",
+        clientId
+      );
+
+      const client = mqtt.connect(
+        url,
+        {
+          clientId,
+
+          keepalive: 30,
+
+          reconnectPeriod: 4000,
+
+          connectTimeout: 8000,
+
+          clean: true,
+        }
+      );
+
+      // =========================
+      // CONNECT
+      // =========================
 
       client.on("connect", () => {
+
+        console.log(
+          "MQTT CONNECTED SUCCESSFULLY"
+        );
+
         this.connected = true;
-        this.connectionListeners.forEach((l) => l(true));
-        client.subscribe("home/+/status");
-      });
 
-      client.on("reconnect", () => {
-        this.connected = false;
-        this.connectionListeners.forEach((l) => l(false));
-      });
+        this.connectionListeners
+          .forEach((l) => l(true));
 
-      client.on("close", () => {
-        this.connected = false;
-        this.connectionListeners.forEach((l) => l(false));
-      });
+        // =========================
+        // SUBSCRIBE RELAY STATES
+        // =========================
 
-      client.on("error", (err) => {
-        console.warn("[MQTT] error", err?.message);
-      });
+        for (
+          let i = 1;
+          i <= 10;
+          i++
+        ) {
 
-      client.on("message", (topic, message) => {
-        // topic: home/{device_id}/status
-        const parts = topic.split("/");
-        if (parts.length >= 3 && parts[2] === "status") {
-          const deviceId = parts[1];
-          try {
-            const payload = JSON.parse(message.toString());
-            this.deviceState[deviceId] = { ...this.deviceState[deviceId], ...payload };
-            this.statusListeners.forEach((l) => l(deviceId, payload));
-          } catch {
-            // ignore non-JSON
-          }
+          const topic =
+            `home/${this.deviceId}/relay/${i}/state`;
+
+          console.log(
+            "MQTT SUBSCRIBING:",
+            topic
+          );
+
+          client.subscribe(
+            topic,
+            (err) => {
+
+              if (err) {
+
+                console.log(
+                  "SUBSCRIBE ERROR:",
+                  err.message
+                );
+
+              } else {
+
+                console.log(
+                  "SUBSCRIBED:",
+                  topic
+                );
+              }
+            }
+          );
         }
       });
 
+      // =========================
+      // RECONNECT
+      // =========================
+
+      client.on(
+        "reconnect",
+        () => {
+
+          console.log(
+            "MQTT RECONNECTING..."
+          );
+
+          this.connected = false;
+
+          this.connectionListeners
+            .forEach((l) => l(false));
+        }
+      );
+
+      // =========================
+      // CLOSE
+      // =========================
+
+      client.on("close", () => {
+
+        console.log(
+          "MQTT CONNECTION CLOSED"
+        );
+
+        this.connected = false;
+
+        this.connectionListeners
+          .forEach((l) => l(false));
+      });
+
+      // =========================
+      // OFFLINE
+      // =========================
+
+      client.on("offline", () => {
+
+        console.log(
+          "MQTT OFFLINE"
+        );
+      });
+
+      // =========================
+      // ERROR
+      // =========================
+
+      client.on("error", (err) => {
+
+        console.log(
+          "MQTT ERROR:",
+          err?.message
+        );
+
+        console.log(
+          "FULL MQTT ERROR:",
+          err
+        );
+      });
+
+      // =========================
+      // DEBUG PACKETS
+      // =========================
+
+      client.on(
+        "packetsend",
+        (packet: any) => {
+
+          console.log(
+            "PACKET SENT:",
+            packet.cmd
+          );
+        }
+      );
+
+      client.on(
+        "packetreceive",
+        (packet: any) => {
+
+          console.log(
+            "PACKET RECEIVED:",
+            packet.cmd
+          );
+        }
+      );
+
+      // =========================
+      // RECEIVE MESSAGE
+      // =========================
+
+      client.on(
+        "message",
+        (topic, message) => {
+
+          try {
+
+            const payload =
+              message.toString();
+
+            console.log(
+              "MQTT MESSAGE RECEIVED"
+            );
+
+            console.log(
+              "TOPIC:",
+              topic
+            );
+
+            console.log(
+              "PAYLOAD:",
+              payload
+            );
+
+            const parts =
+              topic.split("/");
+
+            // expected:
+            // home/deviceid/relay/1/state
+
+            if (
+              parts.length >= 5 &&
+              parts[0] === "home" &&
+              parts[2] === "relay"
+            ) {
+
+              const relayId =
+                Number(parts[3]);
+
+              const state =
+                payload === "ON";
+
+              console.log(
+                "RELAY UPDATE:",
+                relayId,
+                state
+              );
+
+              this.relayStates[
+                relayId
+              ] = state;
+
+              this.relayListeners
+                .forEach((l) =>
+                  l(relayId, {
+                    state,
+                  })
+                );
+            }
+
+          } catch (e) {
+
+            console.log(
+              "MQTT PARSE ERROR:",
+              e
+            );
+          }
+        }
+      );
+
       this.client = client;
+
     } catch (e) {
-      console.warn("[MQTT] connect failed", e);
+
+      console.log(
+        "MQTT CONNECT FAILED:",
+        e
+      );
     }
   }
 
+  // =========================
+  // DISCONNECT
+  // =========================
+
   disconnect() {
+
+    console.log(
+      "MQTT MANUAL DISCONNECT"
+    );
+
     this.client?.end(true);
+
     this.client = null;
+
     this.connected = false;
   }
 
-  publish(deviceId: string, command: any) {
-    const topic = `home/${deviceId}/control`;
-    const payload = JSON.stringify(command);
-    if (this.client && this.connected) {
-      this.client.publish(topic, payload);
-    }
-    if (this.simulatorEnabled) {
-      // Simulate ESP32 echoing back the new status after a short delay
-      setTimeout(() => {
-        const merged = { ...(this.deviceState[deviceId] || {}), ...command };
-        this.deviceState[deviceId] = merged;
-        this.statusListeners.forEach((l) => l(deviceId, merged));
-        // Also publish to broker so other listeners see it
-        if (this.client && this.connected) {
-          this.client.publish(`home/${deviceId}/status`, JSON.stringify(merged));
+  // =========================
+  // PUBLISH RELAY
+  // =========================
+
+  publishRelay(
+    relayId: number,
+    state: boolean
+  ) {
+
+    const topic =
+      `home/${this.deviceId}/relay/${relayId}/set`;
+
+    const payload =
+      state ? "ON" : "OFF";
+
+    console.log(
+      "MQTT PUBLISHING"
+    );
+
+    console.log(
+      "TOPIC:",
+      topic
+    );
+
+    console.log(
+      "PAYLOAD:",
+      payload
+    );
+
+    if (
+      this.client &&
+      this.connected
+    ) {
+
+      this.client.publish(
+        topic,
+        payload,
+        (err) => {
+
+          if (err) {
+
+            console.log(
+              "PUBLISH ERROR:",
+              err.message
+            );
+
+          } else {
+
+            console.log(
+              "PUBLISH SUCCESS"
+            );
+          }
         }
-      }, 220);
+      );
+
+    } else {
+
+      console.log(
+        "MQTT NOT CONNECTED"
+      );
     }
+
+    // LOCAL UI UPDATE
+
+    this.relayStates[relayId] =
+      state;
+
+    this.relayListeners
+      .forEach((l) =>
+        l(relayId, {
+          state,
+        })
+      );
   }
 
-  onStatus(l: StatusListener) {
-    this.statusListeners.add(l);
-    return () => this.statusListeners.delete(l);
+  // =========================
+  // RELAY LISTENER
+  // =========================
+
+  onRelayUpdate(
+    listener: RelayListener
+  ) {
+
+    this.relayListeners.add(
+      listener
+    );
+
+    return () =>
+      this.relayListeners.delete(
+        listener
+      );
   }
 
-  onConnection(l: ConnectionListener) {
-    this.connectionListeners.add(l);
-    l(this.connected);
-    return () => this.connectionListeners.delete(l);
+  // =========================
+  // CONNECTION LISTENER
+  // =========================
+
+  onConnection(
+    listener: ConnectionListener
+  ) {
+
+    this.connectionListeners.add(
+      listener
+    );
+
+    listener(this.connected);
+
+    return () =>
+      this.connectionListeners.delete(
+        listener
+      );
   }
 }
 
-export const mqttService = new MqttService();
+export const mqttService =
+  new MqttService();

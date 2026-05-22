@@ -1,79 +1,191 @@
 import { create } from "zustand";
-import { api, setToken, getToken } from "../services/api";
+
+import {
+  api,
+  setToken,
+  getToken,
+} from "../services/api";
 
 type User = {
-  user_id: string;
-  email: string;
+  id: string;
   name: string;
-  picture?: string | null;
+  email: string;
 };
 
 type AuthState = {
   user: User | null;
+
   loading: boolean;
+
   bootstrapped: boolean;
+
   bootstrap: () => Promise<void>;
-  setSession: (token: string, user: User) => Promise<void>;
-  guestLogin: () => Promise<void>;
+
+  login: (
+    email: string,
+    password: string
+  ) => Promise<void>;
+
+  register: (
+    name: string,
+    email: string,
+    password: string
+  ) => Promise<void>;
+
   logout: () => Promise<void>;
 };
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore =
+create<AuthState>((set) => ({
+
   user: null,
+
   loading: false,
+
   bootstrapped: false,
+
+  // =========================
+  // BOOTSTRAP
+  // =========================
+
   bootstrap: async () => {
-    set({ loading: true });
+
     try {
-      const token = await getToken();
+
+      const token =
+        await getToken();
+
+      // NO TOKEN
+
       if (!token) {
-        set({ user: null, bootstrapped: true, loading: false });
+
+        set({
+          user: null,
+          bootstrapped: true,
+        });
+
         return;
       }
-      const me = await api.me();
-      set({ user: me, bootstrapped: true, loading: false });
-    } catch {
+
+      // LOAD USER
+
+      const user =
+        await api.me();
+
+      set({
+        user,
+        bootstrapped: true,
+      });
+
+    } catch (error) {
+
+      console.log(
+        "BOOTSTRAP ERROR",
+        error
+      );
+
       await setToken(null);
-      set({ user: null, bootstrapped: true, loading: false });
+
+      set({
+        user: null,
+        bootstrapped: true,
+      });
     }
   },
-setSession: async (token, user) => {
-  await setToken(token);
-  set({ user, bootstrapped: true });
-},
 
-guestLogin: async () => {
-  set({ loading: true });
-  try {
-    // Fake demo user
-    const demoUser: User = {
-      user_id: "guest_001",
-      email: "guest@demo.com",
-      name: "Guest User",
-      picture: null,
-    };
+  // =========================
+  // LOGIN
+  // =========================
 
-    const demoToken = "demo-token-123";
-
-    await setToken(demoToken);
+  login: async (
+    email,
+    password
+  ) => {
 
     set({
-  user: demoUser,
-  loading: false,
-  bootstrapped: true,
-});
-console.log("User set:", demoUser);
-  } catch (e) {
-    set({ loading: false });
-    throw e;
-  }
-},
+      loading: true,
+    });
+
+    try {
+
+      const res =
+        await api.login(
+          email,
+          password
+        );
+
+      await setToken(
+        res.token
+      );
+
+      set({
+        user: res.user,
+        loading: false,
+      });
+
+    } catch (error) {
+
+      set({
+        loading: false,
+      });
+
+      throw error;
+    }
+  },
+
+  // =========================
+  // REGISTER
+  // =========================
+
+  register: async (
+    name,
+    email,
+    password
+  ) => {
+
+    set({
+      loading: true,
+    });
+
+    try {
+
+      const res =
+        await api.register(
+          name,
+          email,
+          password
+        );
+
+      await setToken(
+        res.token
+      );
+
+      set({
+        user: res.user,
+        loading: false,
+      });
+
+    } catch (error) {
+
+      set({
+        loading: false,
+      });
+
+      throw error;
+    }
+  },
+
+  // =========================
+  // LOGOUT
+  // =========================
 
   logout: async () => {
-    try {
-      await api.logout();
-    } catch {}
+
     await setToken(null);
-    set({ user: null });
+
+    set({
+      user: null,
+    });
   },
+
 }));

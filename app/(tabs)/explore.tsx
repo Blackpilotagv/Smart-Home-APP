@@ -78,24 +78,26 @@ export default function Dashboard() {
 
   useEffect(() => {
 
-    fetchDevices();
+  mqttService.connect();
 
-    const unsubStatus =
-      bindMqtt();
+  fetchDevices();
 
-    const unsubConn =
-      mqttService.onConnection(
-        setMqttConnected
-      );
+  const unsubStatus =
+    bindMqtt();
 
-    return () => {
+  const unsubConn =
+    mqttService.onConnection(
+      setMqttConnected
+    );
 
-      unsubStatus();
+  return () => {
 
-      unsubConn();
-    };
+    unsubStatus();
 
-  }, []);
+    unsubConn();
+  };
+
+}, []);
 
   // ======================================================
   // FILTERS
@@ -129,17 +131,7 @@ export default function Dashboard() {
       (d) => d.status
     ).length;
 
-  const totalEnergy =
-    devices.reduce(
-      (acc, d) =>
-        acc +
-        (
-          d.status
-            ? d.energy_watts || 0
-            : 0
-        ),
-      0
-    );
+
 
   // ======================================================
   // REFRESH
@@ -292,161 +284,151 @@ export default function Dashboard() {
 
           </Animated.View>
 
-          {/* HERO */}
+{/* HERO */}
 
-          <Animated.View
+<Animated.View
 
-            entering={
-              FadeInDown
-                .delay(150)
-                .springify()
-            }
+  entering={
+    FadeInDown
+      .delay(150)
+      .springify()
+  }
 
-            style={
-              styles.heroCard
-            }
-          >
+  style={
+    styles.heroCard
+  }
+>
 
-            <LinearGradient
+  <LinearGradient
 
-              colors={[
-                "rgba(255,214,10,0.16)",
-                "rgba(10,132,255,0.08)",
-              ]}
+    colors={[
+      "rgba(255,214,10,0.16)",
+      "rgba(10,132,255,0.08)",
+    ]}
 
-              style={
-                StyleSheet.absoluteFill
-              }
+    style={
+      StyleSheet.absoluteFill
+    }
 
-              start={{
-                x: 0,
-                y: 0,
-              }}
+    start={{
+      x: 0,
+      y: 0,
+    }}
 
-              end={{
-                x: 1,
-                y: 1,
-              }}
-            />
+    end={{
+      x: 1,
+      y: 1,
+    }}
+  />
 
-            <View
-              style={
-                styles.heroRow
-              }
-            >
+  <View
+    style={
+      styles.heroRow
+    }
+  >
 
-              <View
-                style={
-                  styles.heroBlock
-                }
-              >
+    {/* ACTIVE DEVICES */}
 
-                <Text
-                  style={
-                    styles.heroLabel
-                  }
-                >
-                  Active devices
-                </Text>
+    <View
+      style={
+        styles.heroBlock
+      }
+    >
 
-                <Text
-                  style={
-                    styles.heroValue
-                  }
-                >
+      <Text
+        style={
+          styles.heroLabel
+        }
+      >
+        Active devices
+      </Text>
 
-                  {onCount}
+      <Text
+        style={
+          styles.heroValue
+        }
+      >
 
-                  <Text
-                    style={
-                      styles.heroValueSmall
-                    }
-                  >
-                    /{devices.length}
-                  </Text>
+        {onCount}
 
-                </Text>
+        <Text
+          style={
+            styles.heroValueSmall
+          }
+        >
+          /{devices.length}
+        </Text>
 
-              </View>
+      </Text>
 
-              <View
-                style={
-                  styles.heroDivider
-                }
-              />
+    </View>
 
-              <View
-                style={
-                  styles.heroBlock
-                }
-              >
+    {/* MQTT STATUS */}
 
-                <Text
-                  style={
-                    styles.heroLabel
-                  }
-                >
-                  Live consumption
-                </Text>
+    <View
+      style={
+        styles.heroBlock
+      }
+    >
 
-                <Text
-                  style={
-                    styles.heroValue
-                  }
-                >
+      <Text
+        style={
+          styles.heroLabel
+        }
+      >
+        MQTT Status
+      </Text>
 
-                  {(
-                    totalEnergy / 1000
-                  ).toFixed(2)}
+      <Text
+        style={
+          styles.heroValue
+        }
+      >
+        {
+          mqttConnected
+            ? "LIVE"
+            : "OFF"
+        }
+      </Text>
 
-                  <Text
-                    style={
-                      styles.heroValueSmall
-                    }
-                  >
-                    {" "}kW
-                  </Text>
+    </View>
 
-                </Text>
+  </View>
 
-              </View>
+  <View
+    style={
+      styles.connRow
+    }
+  >
 
-            </View>
+    <View
+      style={[
+        styles.connPulse,
+        {
+          backgroundColor:
+            mqttConnected
+              ? colors.energy
+              : colors.security,
+        },
+      ]}
+    />
 
-            <View
-              style={
-                styles.connRow
-              }
-            >
+    <Text
+      style={
+        styles.connText
+      }
+    >
+      MQTT{" "}
+      {
+        mqttConnected
+          ? "connected"
+          : "connecting..."
+      }
+    </Text>
 
-              <View
-                style={[
-                  styles.connPulse,
-                  {
-                    backgroundColor:
-                      mqttConnected
-                        ? colors.energy
-                        : colors.security,
-                  },
-                ]}
-              />
+  </View>
 
-              <Text
-                style={
-                  styles.connText
-                }
-              >
-                MQTT{" "}
-                {
-                  mqttConnected
-                    ? "connected"
-                    : "connecting..."
-                }
-              </Text>
-
-            </View>
-
-          </Animated.View>
+</Animated.View>
 
           {/* QUICK ACTIONS */}
 
@@ -855,12 +837,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  heroDivider: {
-    width: 1,
-    backgroundColor:
-      colors.border,
-    marginHorizontal: 16,
-  },
 
   heroLabel: {
     color:

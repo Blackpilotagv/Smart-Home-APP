@@ -8,6 +8,8 @@ import {
   Switch,
   FlatList,
   TextInput,
+  Modal,
+  Alert,
 } from "react-native";
 
 import {
@@ -26,17 +28,9 @@ import {
   radii,
 } from "../../src/theme";
 
-import { useDevicesStore } from "../../src/store/devices";
-
-// ======================================================
-// SWITCH TYPE
-// ======================================================
-
-type RelayType = {
-  id: number;
-  name: string;
-  state: boolean;
-};
+import {
+  useDevicesStore,
+} from "../../src/store/devices";
 
 // ======================================================
 // SCREEN
@@ -49,9 +43,33 @@ export default function DeviceControlScreen() {
   const { id } =
     useLocalSearchParams();
 
+  // ======================================================
+  // STORE
+  // ======================================================
+
   const devices =
     useDevicesStore(
       (s) => s.devices
+    );
+
+  const toggleSwitch =
+    useDevicesStore(
+      (s) => s.toggleSwitch
+    );
+
+  const renameSwitch =
+    useDevicesStore(
+      (s) => s.renameSwitch
+    );
+
+  const createGroupStore =
+    useDevicesStore(
+      (s) => s.createGroup
+    );
+
+  const toggleGroupStore =
+    useDevicesStore(
+      (s) => s.toggleGroup
     );
 
   const device =
@@ -60,67 +78,88 @@ export default function DeviceControlScreen() {
     );
 
   // ======================================================
-  // DEFAULT 10 SWITCHES
+  // MODAL
   // ======================================================
 
-  const [relays, setRelays] =
-    useState<RelayType[]>(
+  const [groupModal,
+    setGroupModal] =
+    useState(false);
 
-      Array.from(
-        { length: 10 },
-        (_, i) => ({
-          id: i + 1,
-          name: `Switch ${i + 1}`,
-          state: false,
-        })
-      )
-    );
+  const [groupName,
+    setGroupName] =
+    useState("");
+
+  const [selectedSwitches,
+    setSelectedSwitches] =
+    useState<number[]>([]);
 
   // ======================================================
-  // TOGGLE
+  // SELECT SWITCH
   // ======================================================
 
-  const toggleRelay = (
+  const selectRelay = (
     relayId: number
   ) => {
 
-    setRelays((prev) =>
-      prev.map((r) =>
-        r.id === relayId
-          ? {
-              ...r,
-              state: !r.state,
-            }
-          : r
-      )
-    );
+    setSelectedSwitches((prev) => {
 
-    // MQTT publish later
-    console.log(
-      "MQTT:",
-      `relay/${relayId}/set`
-    );
+      if (prev.includes(relayId)) {
+        return prev.filter(
+          (id) => id !== relayId
+        );
+      }
+
+      return [...prev, relayId];
+    });
   };
 
   // ======================================================
-  // RENAME
+  // CREATE GROUP
   // ======================================================
 
-  const renameRelay = (
-    relayId: number,
-    value: string
-  ) => {
+  const createGroup = () => {
 
-    setRelays((prev) =>
-      prev.map((r) =>
-        r.id === relayId
-          ? {
-              ...r,
-              name: value,
-            }
-          : r
-      )
+    if (
+      selectedSwitches.length < 2
+    ) {
+
+      Alert.alert(
+        "Select switches",
+        "Select at least 2 switches"
+      );
+
+      return;
+    }
+
+    setGroupModal(true);
+  };
+
+  // ======================================================
+  // SAVE GROUP
+  // ======================================================
+
+  const saveGroup = () => {
+
+    if (!groupName.trim()) {
+
+      Alert.alert(
+        "Group name required"
+      );
+
+      return;
+    }
+
+    createGroupStore(
+      String(id),
+      groupName,
+      selectedSwitches
     );
+
+    setGroupName("");
+
+    setSelectedSwitches([]);
+
+    setGroupModal(false);
   };
 
   // ======================================================
@@ -166,23 +205,120 @@ export default function DeviceControlScreen() {
 
       </View>
 
-      {/* RELAY LIST */}
+      {/* GROUPS */}
+
+      {(device?.groups || []).length > 0 && (
+
+        <>
+          <Text
+            style={
+              styles.sectionTitle
+            }
+          >
+            Groups
+          </Text>
+
+          <FlatList
+            horizontal
+            data={
+              device?.groups || []
+            }
+            keyExtractor={(i) =>
+              i.id
+            }
+            showsHorizontalScrollIndicator={
+              false
+            }
+            contentContainerStyle={{
+              gap: 12,
+              marginBottom: 22,
+            }}
+            renderItem={({ item }) => (
+
+              <TouchableOpacity
+                style={
+                  styles.groupCard
+                }
+                onPress={() =>
+                  toggleGroupStore(
+                    String(id),
+                    item.id
+                  )
+                }
+              >
+
+                <Ionicons
+                  name="layers"
+                  size={22}
+                  color={
+                    colors.lighting
+                  }
+                />
+
+                <Text
+                  style={
+                    styles.groupName
+                  }
+                >
+                  {item.name}
+                </Text>
+
+                <Text
+                  style={
+                    styles.groupCount
+                  }
+                >
+                  {
+                    item.switchIds
+                      .length
+                  } switches
+                </Text>
+
+              </TouchableOpacity>
+            )}
+          />
+        </>
+      )}
+
+      {/* SWITCHES */}
 
       <FlatList
-        data={relays}
+        data={
+          device?.switches || []
+        }
 
         keyExtractor={(item) =>
           item.id.toString()
         }
 
         contentContainerStyle={{
-          paddingBottom: 40,
+          paddingBottom: 140,
         }}
 
         renderItem={({ item }) => (
 
-          <View
-            style={styles.switchCard}
+          <TouchableOpacity
+
+            activeOpacity={0.9}
+
+            onLongPress={() =>
+              selectRelay(
+                item.id
+              )
+            }
+
+            style={[
+              styles.switchCard,
+
+              selectedSwitches.includes(
+                item.id
+              ) && {
+                borderColor:
+                  colors.lighting,
+
+                borderWidth: 2,
+              },
+            ]}
           >
 
             {/* ICON */}
@@ -193,13 +329,15 @@ export default function DeviceControlScreen() {
 
               <MaterialCommunityIcons
                 name={
-                  item.state
+                  item.status
                     ? "lightbulb-on"
                     : "lightbulb-outline"
                 }
+
                 size={26}
+
                 color={
-                  item.state
+                  item.status
                     ? colors.lighting
                     : colors.textSecondary
                 }
@@ -221,7 +359,8 @@ export default function DeviceControlScreen() {
                 onChangeText={(
                   text
                 ) =>
-                  renameRelay(
+                  renameSwitch(
+                    String(id),
                     item.id,
                     text
                   )
@@ -251,30 +390,33 @@ export default function DeviceControlScreen() {
             {/* TOGGLE */}
 
             <Switch
-              value={item.state}
+              value={item.status}
 
               onValueChange={() =>
-                toggleRelay(
+                toggleSwitch(
+                  String(id),
                   item.id
                 )
               }
 
               trackColor={{
-                false:
-                  "#444",
+                false: "#444",
                 true:
                   colors.lighting,
               }}
             />
 
-          </View>
+          </TouchableOpacity>
         )}
       />
 
-      {/* GROUP BUTTON */}
+      {/* CREATE GROUP BUTTON */}
 
       <TouchableOpacity
         style={styles.groupBtn}
+        onPress={
+          createGroup
+        }
       >
 
         <Ionicons
@@ -292,6 +434,101 @@ export default function DeviceControlScreen() {
         </Text>
 
       </TouchableOpacity>
+
+      {/* MODAL */}
+
+      <Modal
+        visible={groupModal}
+        transparent
+        animationType="slide"
+      >
+
+        <View
+          style={
+            styles.modalOverlay
+          }
+        >
+
+          <View
+            style={
+              styles.modalCard
+            }
+          >
+
+            <Text
+              style={
+                styles.modalTitle
+              }
+            >
+              Create Group
+            </Text>
+
+            <TextInput
+              value={groupName}
+
+              onChangeText={
+                setGroupName
+              }
+
+              placeholder="Group name"
+
+              placeholderTextColor={
+                colors.textTertiary
+              }
+
+              style={
+                styles.modalInput
+              }
+            />
+
+            <TouchableOpacity
+              style={
+                styles.saveGroupBtn
+              }
+
+              onPress={
+                saveGroup
+              }
+            >
+
+              <Text
+                style={
+                  styles.saveGroupText
+                }
+              >
+                Save Group
+              </Text>
+
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{
+                marginTop: 14,
+              }}
+
+              onPress={() =>
+                setGroupModal(
+                  false
+                )
+              }
+            >
+
+              <Text
+                style={{
+                  color:
+                    colors.textSecondary,
+                }}
+              >
+                Cancel
+              </Text>
+
+            </TouchableOpacity>
+
+          </View>
+
+        </View>
+
+      </Modal>
 
     </View>
   );
@@ -337,6 +574,40 @@ const styles =
     },
 
     subtitle: {
+      color:
+        colors.textSecondary,
+      marginTop: 4,
+    },
+
+    sectionTitle: {
+      color:
+        colors.textPrimary,
+      fontSize: 18,
+      fontWeight: "700",
+      marginBottom: 12,
+    },
+
+    groupCard: {
+      width: 150,
+      backgroundColor:
+        colors.glassBase,
+      borderRadius:
+        radii.lg,
+      borderWidth: 1,
+      borderColor:
+        colors.border,
+      padding: 16,
+    },
+
+    groupName: {
+      color:
+        colors.textPrimary,
+      fontSize: 16,
+      fontWeight: "700",
+      marginTop: 10,
+    },
+
+    groupCount: {
       color:
         colors.textSecondary,
       marginTop: 4,
@@ -389,6 +660,11 @@ const styles =
     },
 
     groupBtn: {
+      position: "absolute",
+      bottom: 24,
+      left: 24,
+      right: 24,
+
       height: 58,
 
       borderRadius: 30,
@@ -410,4 +686,62 @@ const styles =
       fontSize: 16,
       fontWeight: "700",
     },
-});
+
+    modalOverlay: {
+      flex: 1,
+      backgroundColor:
+        "rgba(0,0,0,0.7)",
+      justifyContent:
+        "center",
+      padding: 24,
+    },
+
+    modalCard: {
+      backgroundColor:
+        colors.bg,
+      borderRadius:
+        radii.lg,
+      padding: 24,
+      borderWidth: 1,
+      borderColor:
+        colors.border,
+    },
+
+    modalTitle: {
+      color:
+        colors.textPrimary,
+      fontSize: 22,
+      fontWeight: "800",
+      marginBottom: 18,
+    },
+
+    modalInput: {
+      backgroundColor:
+        colors.glassBase,
+      borderWidth: 1,
+      borderColor:
+        colors.border,
+      borderRadius:
+        radii.md,
+      paddingHorizontal: 16,
+      height: 54,
+      color:
+        colors.textPrimary,
+    },
+
+    saveGroupBtn: {
+      marginTop: 18,
+      backgroundColor:
+        colors.lighting,
+      height: 54,
+      borderRadius: 28,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    saveGroupText: {
+      color: "black",
+      fontWeight: "800",
+      fontSize: 16,
+    },
+  });

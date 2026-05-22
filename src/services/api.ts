@@ -1,70 +1,136 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from
+"@react-native-async-storage/async-storage";
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
-const TOKEN_KEY = "session_token";
+const BASE_URL =
+process.env.EXPO_PUBLIC_BACKEND_URL;
 
-export async function setToken(token: string | null) {
-  if (token) await AsyncStorage.setItem(TOKEN_KEY, token);
-  else await AsyncStorage.removeItem(TOKEN_KEY);
-}
-export async function getToken(): Promise<string | null> {
-  return AsyncStorage.getItem(TOKEN_KEY);
-}
+// =========================
+// TOKEN STORAGE
+// =========================
 
-async function request(path: string, opts: RequestInit = {}) {
-  const token = await getToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(opts.headers as Record<string, string> | undefined),
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
-  if (!res.ok) {
-    let detail = "Request failed";
-    try {
-      const j = await res.json();
-      detail = j.detail || JSON.stringify(j);
-    } catch {}
-    throw new Error(`${res.status}: ${detail}`);
+export const setToken =
+async (
+  token: string | null
+) => {
+
+  if (token) {
+
+    await AsyncStorage.setItem(
+      "token",
+      token
+    );
+
+  } else {
+
+    await AsyncStorage.removeItem(
+      "token"
+    );
   }
-  if (res.status === 204) return null;
-  const ct = res.headers.get("content-type") || "";
-  return ct.includes("application/json") ? res.json() : res.text();
+};
+
+export const getToken =
+async () => {
+
+  return AsyncStorage.getItem(
+    "token"
+  );
+};
+
+// =========================
+// API REQUEST
+// =========================
+
+async function request(
+  endpoint: string,
+  options: RequestInit = {}
+) {
+
+  const token =
+    await getToken();
+
+  console.log(
+    "API URL:",
+    `${BASE_URL}${endpoint}`
+  );
+
+  const res = await fetch(
+    `${BASE_URL}${endpoint}`,
+    {
+      ...options,
+
+      headers: {
+        "Content-Type":
+          "application/json",
+
+        ...(token
+          ? {
+              Authorization:
+                `Bearer ${token}`,
+            }
+          : {}),
+      },
+    }
+  );
+
+  const data =
+    await res.json();
+
+  if (!res.ok) {
+
+    throw new Error(
+      data.message ||
+      "API Error"
+    );
+  }
+
+  return data;
 }
+
+// =========================
+// API METHODS
+// =========================
 
 export const api = {
-  // auth
-  exchangeSession: (sessionId: string) =>
-    request("/auth/session", { method: "POST", body: JSON.stringify({ session_id: sessionId }) }),
-  guestLogin: () => request("/auth/guest", { method: "POST" }),
-  me: () => request("/auth/me"),
-  logout: () => request("/auth/logout", { method: "POST" }),
 
-  // devices
-  listDevices: () => request("/devices"),
-  getDevice: (id: string) => request(`/devices/${id}`),
-  createDevice: (data: any) => request("/devices", { method: "POST", body: JSON.stringify(data) }),
-  updateDevice: (id: string, data: any) =>
-    request(`/devices/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  deleteDevice: (id: string) => request(`/devices/${id}`, { method: "DELETE" }),
+  register: (
+    name: string,
+    email: string,
+    password: string
+  ) =>
 
-  // automation
-  listRules: () => request("/automation-rules"),
-  createRule: (data: any) => request("/automation-rules", { method: "POST", body: JSON.stringify(data) }),
-  updateRule: (id: string, data: any) =>
-    request(`/automation-rules/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  deleteRule: (id: string) => request(`/automation-rules/${id}`, { method: "DELETE" }),
+    request(
+      "/api/auth/register",
+      {
+        method: "POST",
 
-  // logs
-  listAccessLogs: (deviceId?: string) =>
-    request(`/access-logs${deviceId ? `?device_id=${deviceId}` : ""}`),
-  createAccessLog: (data: any) => request("/access-logs", { method: "POST", body: JSON.stringify(data) }),
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+        }),
+      }
+    ),
 
-  // notifs
-  listNotifications: () => request("/notifications"),
-  markNotificationRead: (id: string) => request(`/notifications/${id}/read`, { method: "PATCH" }),
-  createNotification: (data: any) => request("/notifications", { method: "POST", body: JSON.stringify(data) }),
+  login: (
+    email: string,
+    password: string
+  ) =>
 
-  // energy
-  energySummary: (period: "day" | "week" | "month") => request(`/energy/summary?period=${period}`),
+    request(
+      "/api/auth/login",
+      {
+        method: "POST",
+
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      }
+    ),
+
+  me: () =>
+
+    request(
+      "/api/auth/me"
+    ),
 };
